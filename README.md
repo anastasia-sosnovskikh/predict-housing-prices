@@ -10,7 +10,7 @@
   * **Partial Least Squares Regression (PLS)**
   * **Polynomials**
   * **Splines**
-* **Trees-based Models**
+* **Tree-based Models**
   * **Trees**
   * **Bagged Tree**
   * **Random Forest**
