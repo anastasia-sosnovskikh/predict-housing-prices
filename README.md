@@ -24,5 +24,5 @@ Please see the *Reports* for the details of preprocessing decisisons.
 
 ### 4. Choose the best model
 
-**Mean Squred Error (MSE)** was used to compare perfomance of the models. 
+**Mean Squred Error (MSE)** was used to compare perfomance of the models.   
 Lowest MSE was used to choose the best model. RF performed the best.
