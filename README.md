@@ -1,6 +1,6 @@
 # predict-housing-prices
 
-The project is written in `R`.
+*The project is done in `R`.*
 
 ### 0. Load Data
 The dataset is 1400x16. There are both continious and categorical variables, including missing data.
