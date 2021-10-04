@@ -1,0 +1,866 @@
+---
+title: "Predicting Housing Prices"
+author: "Sosnovskikh, Anastasia"
+date: "April 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Data
+
+Load the packages.
+```{r, include=FALSE, message=FALSE}
+library(dplyr) # for %>%
+library(visdat)
+library(ggplot2)
+library(caret)
+library(tidyverse)
+library(batman)
+library(caTools)
+library(glmnet)
+library(pls)
+library(boot)
+library(tree)
+library(randomForest)
+library(gbm)
+library(splines)
+library(caret)
+library(FNN)
+library(splitstackshape)
+library(factoextra)
+library(leaps)
+library(mlr)
+```
+
+
+### Helpful Functions
+
+Functions to get a list of columns.
+```{r}
+get_CATEGORICAL_features_list <- function(df){
+  cat_vars <- colnames(df)[grepl('factor|logical|character',sapply(df,class))]
+}
+
+get_CONTINIOUS_features_list <- function(df){
+  df %>% select(-get_CATEGORICAL_features_list(df)) %>% colnames()
+}
+```
+
+# EDA
+
+Read in the data. 
+```{r}
+input_train <- read.csv('train.csv', header=T, row.names='id')
+input_test <- read.csv('test.csv', header=T, row.names='id')
+```
+
+#### (0) Check the dimensions.
+```{r}
+input_train %>% dim()
+input_test %>% dim()
+```
+
+#### (1) Get a glimpse of the data.
+```{r}
+input_train %>% glimpse()
+```
+
+```{r}
+input_test %>% glimpse()
+```
+
+Get a summary of the variables.
+```{r}
+input_train %>% summary()
+```
+
+```{r}
+input_test %>% summary()
+```
+
+#### (2) Check for **missing data**.
+```{r}
+input_train %>% purrr::map_dbl(~sum(is.na(.)))
+```
+```{r}
+input_test %>% purrr::map_dbl(~sum(is.na(.)))
+```
+
+Display missing data.
+```{r}
+input_train %>%
+  visdat::vis_miss() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+```{r}
+input_test %>%
+  visdat::vis_miss() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+_`fireplaces` has the most missing data._
+
+_Almost half of the data is missing for `fireplaces`. By getting rid of the observations completely I will lose a lot of data and to set some default value might be misleading because it is a big proportion of data. Therefore, I might not want to use `fireplaces` to make predictions._
+
+
+
+#### (3) Check for variables with **near-zero variance**.
+```{r}
+input_train %>% nearZeroVar()
+```
+```{r}
+input_test %>% nearZeroVar() # price only
+```
+_There are no variables with a zero variance. Thus, do not need to exclude any variables._
+
+#### (4) Check **unique**.
+
+Check the number of uniqu variables.
+```{r}
+sapply(input_train, n_distinct)
+```
+
+```{r}
+sapply(input_test, n_distinct)
+```
+
+Check the levels.
+```{r}
+f <- function(df){
+  list(unique(df))
+}
+```
+
+```{r}
+sapply(input_train[, !names(input_train) %in% c('id', 'price', 'yearbuild', 'sqft', 'lotarea')], f)
+```
+
+
+```{r}
+sapply(input_test[, !names(input_test) %in%  c('id', 'price', 'yearbuild', 'sqft', 'lotarea')], f)
+```
+
+Get unique level counts.
+```{r}
+input_train %>% count(desc)
+input_train %>% count(exteriorfinish)
+input_train %>% count(rooftype)
+input_train %>% count(basement)
+input_train %>% count(state)
+input_train %>% count(zipcode)
+```
+
+```{r}
+input_test %>% count(desc)
+input_test %>% count(exteriorfinish)
+input_test %>% count(rooftype)
+input_test %>% count(basement)
+input_test %>% count(state)
+input_test %>% count(zipcode)
+```
+
+#### (5) Additional checks.
+
+Checks where missings with `fireplaces` occur.
+```{r}
+(input_train %>%  filter(is.na(input_train$fireplaces)) %>%  sapply(f))$state
+```
+
+```{r}
+(input_test %>%  filter(is.na(input_test$fireplaces)) %>%  sapply(f))$state
+```
+```{r}
+input_train %>%  filter(state == 'VA') %>%  nrow()
+```
+
+```{r}
+input_test %>%  filter(state == 'VA') %>%  nrow()
+```
+
+#### (6) Data types 
+
+Check data types.
+```{r}
+input_train %>% visdat::vis_dat()
+```
+
+```{r}
+input_test %>% visdat::vis_dat()
+```
+
+
+## Preprocessing
+
+Define preprocessing funciton based on the EDA.
+```{r}
+apply_preprocessing <- function(df){
+  
+  # delete a column
+  df$fireplaces <- NULL
+  df$zipcode <- NULL
+  
+  # factorize
+  df$desc <- as_factor(df$desc)
+  df$state <- as_factor(df$state)
+  df$rooftype <- as_factor(df$rooftype)
+  df$exteriorfinish <- as_factor(df$exteriorfinish)
+  df$basement <- as_factor(df$basement)
+  
+  df
+}
+```
+
+Apply preprocessing.
+```{r}
+input_train <- apply_preprocessing(input_train)
+input_test <- apply_preprocessing(input_test)
+```
+
+Check the data types.
+```{r}
+input_train %>% visdat::vis_dat()
+```
+
+## Visualizations
+
+Check distributions.
+```{r}
+input_train[c('price', 'sqft', 'lotarea', 'AvgIncome')] %>% 
+  tidyr::gather(key = "key", value = "value") %>% 
+  ggplot(mapping = aes(x = value)) +
+  geom_boxplot() +
+  facet_wrap(~key, scales = "free") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+_There are some outliers but I will keep them to keep as much data as possible._
+
+Counts. 
+```{r}
+input_train[c('desc', 'exteriorfinish', 'rooftype', 'state', 'numstories')] %>% 
+  tidyr::gather(key = "key", value = "value") %>% 
+  ggplot(mapping = aes(x = value)) +
+  geom_bar() +
+  facet_wrap(~key, scales = "free") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+
+```{r}
+input_train[c('numstories', 'yearbuilt', 'totalrooms', 'bedrooms', 'bathrooms')] %>% 
+  tidyr::gather(key = "key", value = "value") %>% 
+  ggplot(mapping = aes(x = value)) +
+  geom_bar() +
+  facet_wrap(~key, scales = "free") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+```{r}
+input_train[c('price', 'numstories', 'yearbuilt', 'totalrooms', 'bedrooms', 'bathrooms', 'sqft', 'lotarea', 'AvgIncome')] %>% 
+  tidyr::gather(key = 'key', value = 'value', ) %>% 
+  ggplot(mapping = aes(x = value)) +
+  geom_histogram(mapping = aes(y = stat(density)),
+                 bins = 31,
+                 fill = 'steelblue', 
+                 color = 'steelblue', 
+                 alpha = 0.5) +
+  geom_density(color = 'red',
+               size = 1.10) +
+  facet_wrap(~key, scales = 'free') +
+  theme_bw()
+```
+
+Correlation matrix.
+```{r}
+input_train %>% 
+  select(-c(get_CATEGORICAL_features_list(input_train))) %>% 
+  as.data.frame() %>% 
+  cor() %>% 
+  corrplot::corrplot(method = 'number', type = 'upper', order='hclust')
+```
+
+```{r}
+input_train %>% 
+  select(-c(get_CATEGORICAL_features_list(input_train))) %>% 
+  as.data.frame() %>% 
+  cor() %>% 
+  corrplot::corrplot.mixed(upper='square', lower.col='black', number.cex=1, title='Correlation Matrix', mar=c(0,0,1,0), tl.cex = 0.8)
+```
+
+_Some inputs are  correlated. Thus, we might need to focus on the models that perform best with correlated inputs or use PCA to uncorrelate them._
+
+```{r}
+input_train %>% 
+  ggplot(mapping = aes(x = basement, fill = state)) +
+  geom_bar(position = 'dodge') +
+  theme_bw()
+```
+
+
+Relationship between Responce and Continious Inputs
+```{r, warning=FALSE}
+input_train %>% 
+  select(get_CONTINIOUS_features_list(input_train)) %>% 
+  tidyr::gather(key = 'key', value = 'value', -price) %>% 
+  ggplot(mapping = aes(x = value, y = price)) +
+  geom_point(fill = 'steelblue', 
+             color = 'steelblue', 
+             alpha = 0.5) +
+  geom_smooth(color = 'red') +
+  facet_wrap(~key, scales = 'free') +
+  theme_bw()
+```
+
+```{r, warning=FALSE}
+input_train %>% 
+  tidyr::gather(key = 'key', value = 'value', -price, -c(get_CATEGORICAL_features_list(input_train))) %>% 
+  ggplot(mapping = aes(x = value, y = price)) +
+  geom_point(mapping = aes(color = state),
+             alpha = 0.05) +
+  geom_smooth(mapping = aes(color = state)) +
+  facet_wrap(~key, scales = 'free') +
+  theme_bw()
+```
+
+# Training Models
+
+## Create `train` and `test` sets out of `input_train`.
+ 
+Read in the data.
+```{r}
+input_train <- read.csv('train.csv', header=T)
+```
+
+Preprocess data.
+```{r}
+input_train <- apply_preprocessing(input_train)
+```
+
+Create stratified samples.
+```{r}
+set.seed(1)
+
+cat_vars <- get_CATEGORICAL_features_list(input_train)
+cat_vars <- cat_vars[cat_vars != 'id']
+
+sample <- stratified(
+  indt=input_train, 
+  group=cat_vars,
+  size=0.8,
+  replace=FALSE)
+
+train <- input_train[input_train$id %in% sample$id,]
+test <- input_train[!(input_train$id %in% sample$id),]
+```
+
+Make `id` column an index.
+```{r}
+rownames(input_train) <- input_train$id 
+input_train$id <- NULL
+
+rownames(train) <- train$id 
+train$id <- NULL
+
+rownames(test) <- test$id 
+test$id <- NULL
+```
+
+Check the dimensions.
+```{r}
+input_train %>%  dim()
+train %>% dim()
+test %>%dim()
+```
+
+Create matrices to use for some of the methods.
+```{r}
+train_mat <- model.matrix(price ~ ., data=train)
+test_mat <- model.matrix(price ~ ., data=test)
+
+train_mat %>%  dim()
+test_mat %>%  dim()
+```
+
+
+## Run models
+
+### Baseline
+
+```{r}
+baseline_mse <- mean((test$price - mean(train$price))^2)
+baseline_mse
+```
+
+
+
+### Linear Model
+
+```{r}
+set.seed(1)
+
+mod_lm <- lm(price ~ ., data=train)
+summary(mod_lm)
+```
+
+```{r}
+pred_lm <- predict(mod_lm, test)
+lm_mse <- mean((test$price - pred_lm)^2)
+lm_mse
+```
+
+### Best Subset Selection Selection
+```{r}
+n_size <- 22
+regfit_full <- regsubsets(price~., data=train, nvmax=n_size)
+regfit_full_sum <- regfit_full %>% summary()
+regfit_full_sum
+```
+
+```{r}
+errs_test <- rep(NA, n_size)
+
+for (i in 1:n_size) {
+  cur_coef <- coef(regfit_full, id=i)
+  pred <- test_mat[, names(cur_coef)] %*% cur_coef
+  errs_test[i] <- mean((test$price - pred)^2)
+}
+
+plot(errs_test, type='l',xlab='Number of Predictors',ylab="Test MSE")
+axis(side=1,at=1:20)
+```
+
+
+### Forward Stepwise Selection
+
+```{r}
+regfit_fwd <- regsubsets(price~., data=train, 
+                         nvmax=n_size,
+                         method='forward')
+
+regfit_fwd_sum <- regfit_fwd %>% summary()
+regfit_fwd_sum
+```
+```{r}
+errs_test <- rep(NA, n_size)
+
+for (i in 1:n_size) {
+  cur_coef <- coef(regfit_fwd, id=i)
+  pred <- test_mat[, names(cur_coef)] %*% cur_coef
+  errs_test[i] <- mean((test$price - pred)^2)
+}
+
+plot(errs_test, type='l',xlab='Number of Predictors',ylab="Test MSE")
+axis(side=1,at=1:20)
+```
+
+### Backward Stepwise Selection
+```{r}
+regfit_bwd <- regsubsets(price~., data=train, 
+                         nvmax=n_size,
+                         method='backward')
+
+regfit_bwd_sum <- regfit_bwd %>% summary()
+regfit_bwd_sum
+```
+```{r}
+errs_test <- rep(NA, n_size)
+
+for (i in 1:n_size) {
+  cur_coef <- coef(regfit_bwd, id=i)
+  pred <- test_mat[, names(cur_coef)] %*% cur_coef
+  errs_test[i] <- mean((test$price - pred)^2)
+}
+
+plot(errs_test, type='l',xlab='Number of Predictors',ylab="Test MSE")
+axis(side=1,at=1:20)
+```
+
+Based on the graphs, I would choose either`3` or `7` variables. Interestingly enough, all the subset selections methods identified the same set of variables for `3` and `7`.
+
+### Linear Model - 3 Vars
+
+```{r}
+set.seed(1)
+
+mod_lm_3 <- lm(price ~ sqft + state + bathrooms, data=train)
+summary(mod_lm_3)
+```
+
+```{r}
+pred_lm_3 <- predict(mod_lm_3, test)
+lm_3_mse <- mean((test$price - pred_lm_3)^2)
+lm_3_mse
+```
+
+
+### Linear Model - 7 Vars
+
+
+```{r}
+set.seed(1)
+
+mod_lm_7 <- lm(price ~ sqft + state + bathrooms + desc + exteriorfinish + rooftype + bedrooms, data=train)
+summary(mod_lm_7)
+```
+
+```{r}
+pred_lm_7 <- predict(mod_lm_7, test)
+lm_7_mse <- mean((test$price - pred_lm_7)^2)
+lm_7_mse
+```
+
+### Ridge
+
+```{r}
+set.seed(1)
+
+mod_ridge_cv <- cv.glmnet(train_mat, train[, 'price'], alpha=0, type.measure='mse', nfolds=5)
+
+best_lambda <- mod_ridge_cv$lambda.min
+pred_ridge <- predict(mod_ridge_cv, s=best_lambda, newx=test_mat)
+ridge_mse <- mean((test$price - pred_ridge)^2)
+ridge_mse
+```
+
+### Lasso
+
+```{r}
+set.seed(1)
+mod_lasso_cv <- cv.glmnet(train_mat, train[, 'price'], alpha=1, type.measure='mse', nfolds=5)
+
+best_lambda <- mod_lasso_cv$lambda.min
+pred_lasso <- predict(mod_lasso_cv, s=best_lambda, newx=test_mat)
+lasso_mse <- mean((test$price - pred_lasso)^2)
+lasso_mse
+```
+
+```{r}
+# non-zero coefficients
+sum(predict(mod_lasso_cv, s=best_lambda, newx=test_mat, type='coefficients') != 0)
+```
+
+### PCR
+
+```{r}
+set.seed(1)
+
+mod_pcr <- pcr(price ~ ., data=train, scale=F, validation='CV')
+validationplot(mod_pcr, val.type='MSEP')
+```
+
+
+```{r}
+set.seed(1)
+
+pred_pcr <- predict(mod_pcr, test, ncomp=20)
+pcr_mse <- mean((test$price - pred_pcr)^2)
+pcr_mse
+```
+
+### PLS
+
+```{r}
+set.seed(1)
+
+mod_pls <- plsr(price ~ ., data=train, scale=F, validation='CV')
+validationplot(mod_pls, val.type='MSEP')
+```
+
+```{r}
+set.seed(1)
+
+pred_pls <- predict(mod_pls, test, ncomp=6)
+pls_mse <- mean((test$price - pred_pls)^2)
+pls_mse
+```
+
+### Polynomials
+```{r}
+set.seed(1)
+
+degree <- 10
+cv_error <- rep(NA,degree)
+
+for (i in 1:degree){
+  glm_fit <- glm(price ~ poly(sqft,i) + poly(bathrooms,i) ,data=input_train)
+  cv_error[i]<- cv.glm(input_train, glm_fit, K=10)$delta[1]
+}
+
+which.min(cv_error)
+```
+
+```{r}
+plot(cv_error, type='b', xlab='Polynomial Degree', ylab='Test MSE')
+```
+
+```{r}
+mod_poly <- glm(price ~ poly(sqft,which.min(cv_error)) + poly(bathrooms,which.min(cv_error)) ,data=train)
+
+pred_poly <- predict(mod_poly, test)
+poly_mse <- mean((test$price - pred_poly)^2)
+poly_mse 
+```
+
+### Splines
+
+```{r}
+set.seed(1)
+
+df <- 10
+cv_error <- rep(NA,df)
+
+for (i in 2:df){
+  spline_fit <- glm(price ~ ns(sqft, df=i), data=input_train)
+  cv_error[i]<- cv.glm(input_train, spline_fit, K=10)$delta[1]
+}
+
+which.min(cv_error)
+```
+```{r}
+plot(cv_error, type='b', xlab='Degrees of Freedom', ylab='Test MSE')
+```
+
+```{r}
+mod_spline <- glm(price ~ ns(sqft, df=which.min(cv_error)), data=input_train)
+
+pred_spline <- predict(mod_spline, test)
+spline_mse <- mean((test$price - pred_spline)^2)
+spline_mse 
+```
+
+
+### Trees
+
+Create data sets.
+```{r}
+train_trees <- createDummyFeatures(train, cols=cat_vars)
+test_trees <- createDummyFeatures(test, cols=cat_vars)
+```
+
+```{r}
+mod_tree <- tree(price ~ ., data=train_trees)
+summary(mod_tree)
+```
+
+```{r}
+plot(mod_tree)
+text(mod_tree, pretty=0)
+```
+
+```{r}
+set.seed(1)
+
+pred_tree <- predict(mod_tree, test_trees)
+tree_mse <- mean((test_trees$price - pred_tree)^2)
+tree_mse
+```
+```{r}
+set.seed(1)
+
+cv_mods <- cv.tree(mod_tree)
+plot(cv_mods$size, cv_mods$dev, type='b')
+```
+```{r}
+set.seed(1)
+
+pruned_tree <- prune.tree(mod_tree, best=11)
+plot(pruned_tree)
+text(pruned_tree, pretty=0)
+```
+```{r}
+set.seed(1)
+
+pred_pruned <- predict(pruned_tree, test_trees)
+pruned_mse <- mean((test_trees$price - pred_pruned)^2)
+pruned_mse
+```
+
+### Bagged tree
+```{r}
+set.seed(1)
+
+num_par <- ncol(train_trees)-1
+
+mod_bagged_tree <- randomForest(price ~ ., data=train_trees, mtry=num_par, ntree=1000, importance=T)
+bagged_pred <- predict(mod_bagged_tree, test_trees)
+bagged_mse <- mean((test_trees$price - bagged_pred)^2)
+bagged_mse
+```
+
+```{r}
+importance(mod_bagged_tree)
+```
+
+### Random Forest
+
+```{r}
+
+num_par <- ncol(train_trees)-1
+rf_MSEs <- c()
+
+for(i in 1:num_par){
+  set.seed(i)
+  mod_rf <- randomForest(price ~ ., data=train_trees, mtry=i, ntree=1000, importance=T)
+  rf_pred <- predict(mod_rf, test_trees)
+  rf_MSEs <- rbind(rf_MSEs, mean((test_trees$price - rf_pred)^2))
+}
+
+plot(1:num_par, rf_MSEs, type='l')
+```
+```{r}
+which.min(rf_MSEs)
+```
+
+
+```{r}
+set.seed(1)
+
+mod_rf <- randomForest(price ~ ., data=train_trees, mtry=which.min(rf_MSEs), ntree=1000, importance=T)
+rf_pred <- predict(mod_rf, test_trees)
+rf_mse <- mean((test_trees$price - rf_pred)^2)
+rf_mse
+```
+
+```{r}
+importance(mod_rf)
+```
+
+### Boosting
+```{r}
+lambdas <- seq(0.01, 0.1, by=0.005)
+int_depth <- seq(1, 5, by=1)
+length_lambdas <- length(lambdas)
+length_depth <- length(int_depth)
+counter <- 1
+err_test <- rep(NA, (length_lambdas*length_depth))
+
+for (i in 1:length_lambdas) {
+  for (j in 1:length_depth) {
+    set.seed(counter)
+    mod_boost <- gbm(price~., data=train_trees, distribution='gaussian', n.trees=1000, shrinkage=lambdas[i], interaction.depth=int_depth[j])
+    pred_test <- predict(mod_boost, test_trees, n.trees=1000)
+    err_test[counter] <- mean((test_trees$price - pred_test)^2)
+    counter <- counter+1
+  }
+}
+```
+
+```{r}
+plot(err_test, type='l', xlab='Shrinkage', ylab='Test MSE')
+```
+```{r}
+which.min(err_test)
+```
+
+
+```{r}
+set.seed(1)
+
+mod_boost <- gbm(price~., data=train_trees, distribution='gaussian', n.trees=1000, shrinkage=0.01, interaction.depth=4)
+pred_test <- predict(mod_boost, test_trees, n.trees=1000)
+boost_mse <- mean((test_trees$price - pred_test)^2)
+boost_mse
+```
+
+```{r}
+mod_boost <- gbm(price~., data=train_trees, distribution='gaussian', n.trees=1000, shrinkage=lambdas[5])
+summary(mod_boost)
+```
+
+
+### KNN
+
+```{r}
+set.seed(1)
+
+my_ctrl <- trainControl(method='cv', number=5)
+k_grid <- expand.grid(k=seq(1, 25, by=2))
+
+#fit_knn <- train(price ~ ., data=input_train,
+#                 method = 'knn',
+#                 metric = 'RMSE',
+#                 tuneGrid = k_grid,
+#                 trControl = my_ctrl)
+
+#ggplot(fit_knn) + theme_bw()
+```
+
+```{r}
+mod_knn <- knn.reg(train_mat, test = test_mat, train$price, k=5)
+knn_pred <- mod_knn$pred
+knn_mse <- mean((test$price - knn_pred)^2)
+knn_mse
+```
+
+
+
+## Compare MSEs
+
+```{r}
+MSEs <- c(baseline_mse=baseline_mse,
+          lm_mse=lm_mse,
+          lm_3_mse=lm_3_mse,
+          lm_7_mse=lm_7_mse,
+          ridge_mse=ridge_mse,
+          lasso_mse=lasso_mse,
+          knn_mse=knn_mse,
+          pcr_mse=pcr_mse,
+          pls_mse=pls_mse,
+          poly_mse=poly_mse,
+          spline_mse=spline_mse,
+          tree_mse=tree_mse,
+          bagged_mse=bagged_mse,
+          rf_mse=rf_mse,
+          boost_mse=boost_mse)
+MSEs
+```
+
+```{r}
+comp <- data.frame(method=c('Baseline', 'LM', 'LM with 3', 'LM with 7', 'Ridge', 
+                            'Lasso', 'PCR', 'PLS', 'Poly', 
+                            'Spline', 'Tree', 'Bagged', 'RF', 
+                            'Boosted', 'KNN'),
+        test_MSE=c(baseline_mse, lm_mse, lm_3_mse, lm_7_mse, 
+                   ridge_mse, lasso_mse, pcr_mse, 
+                   pls_mse, poly_mse, spline_mse, 
+                   tree_mse,bagged_mse, rf_mse, 
+                   boost_mse,knn_mse))
+
+comp[order(comp$test_MSE), ]
+```
+
+Choose the best model.
+```{r}
+input_test <- read.csv('test.csv', header=T, row.names='id')
+input_test <- apply_preprocessing(input_test)
+
+input_test_trees <- createDummyFeatures(input_test, cols=cat_vars)
+
+
+best_model <- mod_rf 
+best_pred <- predict(best_model, input_test_trees)
+```
+
+
+# Reporting the final result
+
+Create the data frame.
+```{r}
+final_df <- data.frame(
+  id=rownames(input_test_trees),
+  price=best_pred
+  )
+```
+
+Write out the results.
+```{r}
+write.csv(final_df, 'testing_predictions.csv', row.names=FALSE)
+```
+
