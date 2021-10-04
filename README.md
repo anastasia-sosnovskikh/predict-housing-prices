@@ -5,7 +5,7 @@ The dataset is 1400x16. There are both continious and categorical variables, inc
 ### 1. Exploratory Data Analysis & Visualizations
 Checking the dimentions, getting a glimpse of the data, checking the datatypes, summaries, variables with near-zero variance, unique values, etc.
 ### 2. Preprocessing
-Please see the *Reports* for the details of presroessing decisisons.
+Please see the *Reports* for the details of preprocessing decisisons.
 ### 3. Training Models 
 * **Linear Model (LM)** 
   * LM with *various variables* (3, 7) based on the following selections: **Best Subset** Selection, **Forward Stepwise** Selection, **Backward Stepwise** Selection
