@@ -8,7 +8,8 @@ Checking the dimentions, getting a glimpse of the data, checking the datatypes, 
 Please see the *Reports* for the details of preprocessing decisisons.
 ### 3. Training Models 
 * **Linear Model (LM)** 
-  * LM with *various variables* (3, 7) based on the following selections: **Best Subset** Selection, **Forward Stepwise** Selection, **Backward Stepwise** Selection
+  * LM with *various variables* (3, 7) based on the following selections:   
+    **Best Subset** Selection, **Forward Stepwise** Selection, **Backward Stepwise** Selection
   * **Ridge Regression**
   * **Lasso Regression**
   * **Principle Component Regression (PCR)**
