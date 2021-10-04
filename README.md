@@ -1,9 +1,11 @@
 # predict-housing-prices
 
 ### 0. Load Data
-1400x16 dataset, both continious and categorical variables, including missing data
+The dataset is 1400x16. There are both continious and categorical variables, including missing data.
 ### 1. Exploratory Data Analysis & Visualizations
+Checking the dimentions, getting a glimpse of the data, checking the datatypes, summaries, variables with near-zero variance, unique values, etc.
 ### 2. Preprocessing
+Please see the *Reports* for the details of presroessing decisisons.
 ### 3. Training Models 
 * **Linear Model (LM)** 
   * LM with *various variables* (3, 7) based on the following selections: **Best Subset** Selection, **Forward Stepwise** Selection, **Backward Stepwise** Selection
