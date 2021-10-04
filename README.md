@@ -2,10 +2,8 @@
 
 
 ## Models
-* **Linear Model** with various variables (3, 7) based on the following selections
-      * Best Subset Selection
-      * Forward Stepwise Selection
-      * Backward Stepwise Selection
+* **Linear Model (LM)** 
+  * LM with *various variables* (3, 7) based on the following selections: **Best Subset** Selection, **Forward Stepwise** Selection, **Backward Stepwise** Selection
   * **Ridge Regression**
   * **Lasso Regression**
   * **Principle Component Regression (PCR)**
