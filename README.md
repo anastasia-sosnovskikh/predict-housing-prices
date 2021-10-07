@@ -9,7 +9,7 @@ Checking the dimentions, getting a glimpse of the data, checking the datatypes, 
 ### 2. Preprocessing
 Please see the *Reports* for the details of preprocessing decisisons.
 ### 3. Training Models 
-* **Linear Model (LM)** 
+* **Linear and Non-Linear Models (LM)** 
   * LM with *various variables* (3, 7) based on the following selections:   
     **Best Subset** Selection, **Forward Stepwise** Selection, **Backward Stepwise** Selection
   * **Ridge Regression**
