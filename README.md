@@ -2,7 +2,7 @@
 
 *The project is done in `R`.*
 
-The goal of the project is to build a model to predict housing prices in two markets, Pittsburgh, PA and Redmond, WA, using a scraped data set.  
+The goal of the project is to build a model to predict housing prices in two markets, Pittsburgh, PA and Richmond, VA, using a scraped data set.  
 The delivarables include:
 
 * **Predictions**: a single .csv file with 600 housing prices predictions.
